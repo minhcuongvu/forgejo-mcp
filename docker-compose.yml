@@ -1,0 +1,10 @@
+services:
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server:latest
+    container_name: github-mcp
+    restart: unless-stopped
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}
+    command: ["http", "--port", "8766", "--toolsets", "repos,issues,pull_requests", "--read-only"]
+    ports:
+      - "8766:8766"
