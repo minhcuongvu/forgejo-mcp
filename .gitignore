@@ -1,0 +1,9 @@
+# Binary
+forgejo-mcp-server
+forgejo-mcp-server.exe
+
+# Environment
+.env
+
+# Go
+go.sum

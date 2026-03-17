@@ -1,131 +1,254 @@
 # Forgejo MCP Server
 
-Forgejo/Gitea MCP server for self-hosted git (repos, issues, PRs).
+MCP (Model Context Protocol) server for Forgejo/Gitea self-hosted git forges. Enables AI assistants (OpenCode, Claude Code, etc.) to interact with your Forgejo instance.
 
-Custom Go MCP server coming soon...
+## Features
 
-Forgejo MCP server setup for self-hosted git (OpenCode, Claude Code, etc).
+- **Repository Management**: List, search, and get detailed information about repositories
+- **Branch Operations**: List branches and get branch details
+- **Commit History**: List commits and get detailed commit information
+- **Issue Tracking**: List, view, and create issues
+- **Pull Request Management**: List, view, create, and merge pull requests
+- **File Access**: Retrieve file contents from repositories
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) installed and running
-- [GitHub Personal Access Token](https://github.com/settings/tokens) with appropriate scopes
-- [OpenCode](https://opencode.ai) installed (for Option 1)
+- [Go 1.23+](https://go.dev/dl/) (for building)
+- [Docker](https://docs.docker.com/get-docker/) (optional, for containerized deployment)
+- Forgejo/Gitea instance with API access
+- Forgejo API token (for private repos and write operations)
 
-## Setup
+## Quick Start
 
-### Option 1: Local MCP via OpenCode (Recommended)
+### Option 1: Build and Run Directly
 
-Spawns Docker container per-request via stdio. No persistent server needed.
+```bash
+# Build
+go build -o forgejo-mcp-server
 
-1. Copy the example config:
+# Run (with env vars)
+FORGEJO_URL=http://your-forgejo:3000 FORGEJO_TOKEN=your_token ./forgejo-mcp-server
+```
+
+### Option 2: Docker
+
+```bash
+# Build image
+docker build -t forgejo-mcp-server .
+
+# Run
+docker run -i --rm \
+  -e FORGEJO_URL=http://your-forgejo:3000 \
+  -e FORGEJO_TOKEN=your_token \
+  forgejo-mcp-server
+```
+
+### Option 3: OpenCode Integration
+
+1. Copy example config:
    ```bash
-   # Create config directory if needed
    mkdir -p ~/.config/opencode
-   
-   # Copy and edit the example
    cp opencode.json.example ~/.config/opencode/opencode.json
    ```
 
-2. Edit `~/.config/opencode/opencode.json` and replace `your_token_here` with your GitHub token
+2. Edit `~/.config/opencode/opencode.json`:
+   - Set `FORGEJO_URL` to your Forgejo instance
+   - Set `FORGEJO_TOKEN` to your API token (optional for public repos)
 
 3. Verify:
    ```bash
    opencode mcp list
    ```
 
-### Option 2: HTTP Server (Docker Compose)
+## Configuration
 
-Runs persistent HTTP server. Useful for sharing across multiple clients or web apps.
+| Environment Variable | Description | Default |
+|---------------------|-------------|---------|
+| `FORGEJO_URL` | Base URL of your Forgejo instance | `http://localhost:3000` |
+| `FORGEJO_TOKEN` | API token for authentication | (none - public access only) |
+
+### Getting a Forgejo API Token
+
+1. Go to your Forgejo instance
+2. Navigate to Settings > Applications
+3. Generate new token with appropriate scopes:
+   - `read:repository` - for listing repos and files
+   - `read:issue` - for listing issues
+   - `write:issue` - for creating issues
+   - `write:repository` - for creating PRs and merging
+
+## Available Tools
+
+### Repository Tools
+
+#### `list_repos`
+List repositories from Forgejo.
+
+**Parameters:**
+- `query` (optional): Search query to filter repositories
+- `owner` (optional): Filter by repository owner username
+- `limit` (optional): Maximum number of results (default: 50)
+
+#### `get_repo`
+Get details of a specific repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+
+#### `get_file`
+Get contents of a file from a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `path` (required): Path to the file
+- `ref` (optional): Branch, tag, or commit (default: default branch)
+
+### Branch Tools
+
+#### `list_branches`
+List branches in a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+
+#### `get_branch`
+Get details of a specific branch.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `branch` (required): Branch name
+
+### Commit Tools
+
+#### `list_commits`
+List commits in a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `sha` (optional): Branch name or commit SHA (default: default branch)
+- `limit` (optional): Maximum number of commits (default: 30)
+
+#### `get_commit`
+Get details of a specific commit.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `sha` (required): Commit SHA
+
+### Issue Tools
+
+#### `list_issues`
+List issues in a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `state` (optional): Filter by state: `open`, `closed`, `all` (default: `open`)
+
+#### `get_issue`
+Get details of a specific issue.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `index` (required): Issue number
+
+#### `create_issue`
+Create a new issue in a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `title` (required): Issue title
+- `body` (optional): Issue body/description
+
+### Pull Request Tools
+
+#### `list_pull_requests`
+List pull requests in a repository.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `state` (optional): Filter by state: `open`, `closed`, `all` (default: `open`)
+
+#### `get_pull_request`
+Get details of a specific pull request.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `index` (required): Pull request number
+
+#### `get_pull_request_diff`
+Get the diff of a pull request.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `index` (required): Pull request number
+
+#### `create_pull_request`
+Create a new pull request.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `title` (required): Pull request title
+- `head` (required): Source branch name
+- `base` (required): Target branch name
+- `body` (optional): Pull request description
+
+#### `merge_pull_request`
+Merge a pull request.
+
+**Parameters:**
+- `owner` (required): Repository owner username
+- `repo` (required): Repository name
+- `index` (required): Pull request number
+- `merge_style` (optional): Merge style: `merge`, `rebase`, `squash` (default: `merge`)
+- `title` (optional): Merge commit title
+- `message` (optional): Merge commit message
+- `delete_branch` (optional): Delete source branch after merge (default: false)
+
+## Usage Examples
+
+In your AI assistant:
+- "List all repos on forgejo"
+- "Show me the README from michael/myproject"
+- "List open issues in michael/myproject"
+- "Get the contents of main.go from michael/myproject"
+- "Show me the last 10 commits in michael/myproject"
+- "List all branches in michael/myproject"
+- "Show me pull request #5 in michael/myproject"
+- "Create a new issue in michael/myproject about the login bug"
+- "Merge pull request #3 in michael/myproject"
+
+## Development
 
 ```bash
-cp .env.example .env  # Add your GitHub token
-docker-compose up -d  # Server at http://localhost:8766/mcp
+# Run tests
+go test ./...
+
+# Build for multiple platforms
+GOOS=linux GOARCH=amd64 go build -o forgejo-mcp-server-linux
+GOOS=windows GOARCH=amd64 go build -o forgejo-mcp-server.exe
+GOOS=darwin GOARCH=arm64 go build -o forgejo-mcp-server-darwin
 ```
 
-Requires Bearer token header on each request.
+## Protocol
 
-## Toolsets
-
-`repos`, `issues`, `pull_requests`, `actions`, `code_security`, `discussions`, `gists`, `notifications`, `orgs`, `projects`, `users`
-
-Flags: `--read-only`, `--toolsets`
-
-## Verified Commits (SSH Signing)
-
-```bash
-# 1. Generate key
-ssh-keygen -t ed25519 -C "your_email@example.com" -f ~/.ssh/id_ed25519_signing -N ""
-
-# 2. Configure git
-git config --global user.name "Your Name"
-git config --global user.email "your_email@example.com"
-git config --global gpg.format ssh
-git config --global user.signingkey ~/.ssh/id_ed25519_signing
-git config --global commit.gpgsign true
-
-# 3. Add to GitHub
-gh auth refresh -h github.com -s admin:ssh_signing_key
-gh ssh-key add ~/.ssh/id_ed25519_signing.pub --type signing --title "Signing key"
-```
-
-Or manually: https://github.com/settings/keys > "New SSH Key" > Key type: "Signing Key"
-
-## Rules for AI Assistants
-
-**CRITICAL**: 
-1. **Know your identity** - Before committing, verify which model you are
-2. **Never change git identity** - Use human's global config + co-author trailer
-3. **Take responsibility** - Use your actual model name in co-author
-
-```bash
-# WRONG - breaks verification
-git config --local user.name "Grok"
-git config --local user.email "grok@x.ai"
-git commit -m "..."  # Unverified!
-
-# WRONG - taking credit for another AI's work
-Co-authored-by: Grok <grok@x.ai>  # But you're Claude!
-
-# CORRECT - use YOUR actual model
-git commit -S -m "Message
-
-Co-authored-by: Claude (claude-opus-4-5) <noreply@anthropic.com>"
-# or
-Co-authored-by: opencode (grok-4-1-fast) <grok@x.ai>
-```
-
-**Why**: SSH key belongs to human. GitHub verifies signature matches committer email. If committer = AI, signature won't match = unverified. `Co-authored-by` gives AI credit without breaking verification.
-
-**History cleanup** (remove bad commits):
-```bash
-git reset --hard <good-commit>
-git push --force
-```
-
-## Usage
-
-Prompts: "List issues using github", "Review PR #123 with github mcp"
-
-AGENTS.md: `For PR reviews, use github tools.`
-
-## AI Skills
-
-This repo includes a skill file for AI assistants. Install to your environment:
-
-```bash
-# For OpenCode
-cp -r skills/git-ai-commits ~/.config/opencode/skills/
-
-# For Claude Code
-cp -r skills/git-ai-commits ~/.claude/skills/
-```
-
-The skill teaches AI models proper git commit attribution rules.
+This server implements the [Model Context Protocol](https://modelcontextprotocol.io/) specification, using JSON-RPC 2.0 over stdio.
 
 ## References
 
-- [GitHub MCP Server](https://github.com/github/github-mcp-server)
-- [OpenCode MCP Docs](https://opencode.ai/docs/mcp-servers/)
+- [Forgejo API Documentation](https://forgejo.org/docs/latest/dev/api-usage/)
+- [Gitea API Documentation](https://docs.gitea.com/api/1.22/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
-- [GitHub: Signing Commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits)
+- [MCP Go SDK](https://github.com/modelcontextprotocol/sdk-go)

@@ -1,15 +1,13 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "github": {
+    "forgejo": {
       "type": "local",
       "command": [
         "docker", "run", "-i", "--rm",
-        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN=your_token_here",
-        "ghcr.io/github/github-mcp-server",
-        "stdio",
-        "--toolsets", "repos,issues,pull_requests",
-        "--read-only"
+        "-e", "FORGEJO_URL=http://your-forgejo-host:3000",
+        "-e", "FORGEJO_TOKEN=your_token_here",
+        "forgejo-mcp-server"
       ]
     }
   }
