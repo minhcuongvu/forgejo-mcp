@@ -498,6 +498,55 @@ func getTools() []Tool {
 				Required: []string{"owner", "repo", "index"},
 			},
 		},
+		// Branch creation
+		{
+			Name:        "create_branch",
+			Description: "Create a new branch in a repository",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"owner":           {Type: "string", Description: "Repository owner username"},
+					"repo":            {Type: "string", Description: "Repository name"},
+					"new_branch_name": {Type: "string", Description: "Name for the new branch"},
+					"old_branch_name": {Type: "string", Description: "Source branch to create from (default: default branch)"},
+				},
+				Required: []string{"owner", "repo", "new_branch_name"},
+			},
+		},
+		// File write tools
+		{
+			Name:        "create_or_update_file",
+			Description: "Create or update a file in a repository. This commits the change directly to the specified branch. To update an existing file you must provide its current SHA (use get_file to obtain it).",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"owner":   {Type: "string", Description: "Repository owner username"},
+					"repo":    {Type: "string", Description: "Repository name"},
+					"path":    {Type: "string", Description: "Path to the file (e.g. src/main.go)"},
+					"content": {Type: "string", Description: "File content (plain text, will be base64-encoded automatically)"},
+					"message": {Type: "string", Description: "Commit message"},
+					"branch":  {Type: "string", Description: "Branch to commit to (default: default branch)"},
+					"sha":     {Type: "string", Description: "SHA of the file being replaced (required for updates, omit for new files)"},
+				},
+				Required: []string{"owner", "repo", "path", "content", "message"},
+			},
+		},
+		{
+			Name:        "delete_file",
+			Description: "Delete a file from a repository. This commits the deletion directly to the specified branch.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]Property{
+					"owner":   {Type: "string", Description: "Repository owner username"},
+					"repo":    {Type: "string", Description: "Repository name"},
+					"path":    {Type: "string", Description: "Path to the file to delete"},
+					"message": {Type: "string", Description: "Commit message"},
+					"branch":  {Type: "string", Description: "Branch to commit to (default: default branch)"},
+					"sha":     {Type: "string", Description: "SHA of the file being deleted (required, use get_file to obtain it)"},
+				},
+				Required: []string{"owner", "repo", "path", "message", "sha"},
+			},
+		},
 	}
 }
 
@@ -538,6 +587,14 @@ func callTool(params CallToolParams) CallToolResult {
 		return createPullRequest(params.Arguments)
 	case "merge_pull_request":
 		return mergePullRequest(params.Arguments)
+	// Branch creation
+	case "create_branch":
+		return createBranch(params.Arguments)
+	// File write
+	case "create_or_update_file":
+		return createOrUpdateFile(params.Arguments)
+	case "delete_file":
+		return deleteFile(params.Arguments)
 	default:
 		return CallToolResult{
 			Content: []ContentBlock{{Type: "text", Text: "Unknown tool: " + params.Name}},
@@ -597,6 +654,14 @@ func forgejoGet(endpoint string) ([]byte, error) {
 
 func forgejoPost(endpoint string, body interface{}) ([]byte, error) {
 	return forgejoRequest("POST", endpoint, body)
+}
+
+func forgejoPut(endpoint string, body interface{}) ([]byte, error) {
+	return forgejoRequest("PUT", endpoint, body)
+}
+
+func forgejoDeleteWithBody(endpoint string, body interface{}) ([]byte, error) {
+	return forgejoRequest("DELETE", endpoint, body)
 }
 
 func forgejoGetRaw(endpoint string) ([]byte, error) {
@@ -797,6 +862,7 @@ func getFile(args map[string]interface{}) CallToolResult {
 		Name     string `json:"name"`
 		Path     string `json:"path"`
 		Size     int    `json:"size"`
+		SHA      string `json:"sha"`
 	}
 
 	if err := json.Unmarshal(body, &fileContent); err != nil {
@@ -818,7 +884,7 @@ func getFile(args map[string]interface{}) CallToolResult {
 		content = string(decoded)
 	}
 
-	text := fmt.Sprintf("# %s\n\nPath: %s\nSize: %d bytes\n\n```\n%s\n```", fileContent.Name, fileContent.Path, fileContent.Size, content)
+	text := fmt.Sprintf("# %s\n\nPath: %s\nSize: %d bytes\nSHA: %s\n\n```\n%s\n```", fileContent.Name, fileContent.Path, fileContent.Size, fileContent.SHA, content)
 
 	return CallToolResult{
 		Content: []ContentBlock{{Type: "text", Text: text}},
@@ -1421,6 +1487,167 @@ func mergePullRequest(args map[string]interface{}) CallToolResult {
 	if deleteBranch {
 		text += " Source branch deleted."
 	}
+
+	return CallToolResult{
+		Content: []ContentBlock{{Type: "text", Text: text}},
+	}
+}
+
+func createBranch(args map[string]interface{}) CallToolResult {
+	owner, _ := args["owner"].(string)
+	repo, _ := args["repo"].(string)
+	newBranch, _ := args["new_branch_name"].(string)
+	oldBranch, _ := args["old_branch_name"].(string)
+
+	if owner == "" || repo == "" || newBranch == "" {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error: owner, repo, and new_branch_name are required"}},
+			IsError: true,
+		}
+	}
+
+	payload := map[string]string{
+		"new_branch_name": newBranch,
+	}
+	if oldBranch != "" {
+		payload["old_branch_name"] = oldBranch
+	}
+
+	respBody, err := forgejoPost(fmt.Sprintf("/repos/%s/%s/branches", owner, repo), payload)
+	if err != nil {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	var b ForgejoBranch
+	if err := json.Unmarshal(respBody, &b); err != nil {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error parsing response: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	text := fmt.Sprintf("Created branch '%s' in %s/%s (commit: %s)", b.Name, owner, repo, b.Commit.SHA[:7])
+
+	return CallToolResult{
+		Content: []ContentBlock{{Type: "text", Text: text}},
+	}
+}
+
+func createOrUpdateFile(args map[string]interface{}) CallToolResult {
+	owner, _ := args["owner"].(string)
+	repo, _ := args["repo"].(string)
+	path, _ := args["path"].(string)
+	content, _ := args["content"].(string)
+	message, _ := args["message"].(string)
+	branch, _ := args["branch"].(string)
+	sha, _ := args["sha"].(string)
+
+	if owner == "" || repo == "" || path == "" || content == "" || message == "" {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error: owner, repo, path, content, and message are required"}},
+			IsError: true,
+		}
+	}
+
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+
+	payload := map[string]interface{}{
+		"content": encoded,
+		"message": message,
+	}
+	if branch != "" {
+		payload["branch"] = branch
+	}
+	if sha != "" {
+		payload["sha"] = sha
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/contents/%s", owner, repo, path)
+
+	var respBody []byte
+	var err error
+	if sha != "" {
+		respBody, err = forgejoPut(endpoint, payload)
+	} else {
+		respBody, err = forgejoPost(endpoint, payload)
+	}
+	if err != nil {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	var result struct {
+		Content struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+			SHA  string `json:"sha"`
+		} `json:"content"`
+		Commit struct {
+			SHA     string `json:"sha"`
+			Message string `json:"message"`
+			HTMLURL string `json:"html_url"`
+		} `json:"commit"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error parsing response: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	action := "Created"
+	if sha != "" {
+		action = "Updated"
+	}
+	text := fmt.Sprintf("%s file '%s' in %s/%s\nCommit: %s\nMessage: %s", action, result.Content.Path, owner, repo, result.Commit.SHA[:7], result.Commit.Message)
+	if result.Commit.HTMLURL != "" {
+		text += fmt.Sprintf("\nURL: %s", result.Commit.HTMLURL)
+	}
+
+	return CallToolResult{
+		Content: []ContentBlock{{Type: "text", Text: text}},
+	}
+}
+
+func deleteFile(args map[string]interface{}) CallToolResult {
+	owner, _ := args["owner"].(string)
+	repo, _ := args["repo"].(string)
+	path, _ := args["path"].(string)
+	message, _ := args["message"].(string)
+	branch, _ := args["branch"].(string)
+	sha, _ := args["sha"].(string)
+
+	if owner == "" || repo == "" || path == "" || message == "" || sha == "" {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error: owner, repo, path, message, and sha are required"}},
+			IsError: true,
+		}
+	}
+
+	payload := map[string]interface{}{
+		"message": message,
+		"sha":     sha,
+	}
+	if branch != "" {
+		payload["branch"] = branch
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/contents/%s", owner, repo, path)
+
+	_, err := forgejoDeleteWithBody(endpoint, payload)
+	if err != nil {
+		return CallToolResult{
+			Content: []ContentBlock{{Type: "text", Text: "Error: " + err.Error()}},
+			IsError: true,
+		}
+	}
+
+	text := fmt.Sprintf("Deleted file '%s' from %s/%s\nCommit message: %s", path, owner, repo, message)
 
 	return CallToolResult{
 		Content: []ContentBlock{{Type: "text", Text: text}},
